@@ -111,10 +111,10 @@ int main(void)
   while (1)
   {
     /* USER CODE END WHILE */
-		Servo_Write(0);
-		HAL_Delay(1000);
-		Servo_Write(180);
-		HAL_Delay(1000);
+		Servo_Write(1);
+		HAL_Delay(500);
+		Servo_Write(179);
+		HAL_Delay(500);
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
