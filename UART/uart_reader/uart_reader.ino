@@ -6,8 +6,11 @@ void setup() {
 }
 
 void loop() {
+  while (Serial.available()) {
+    STM32Serial.write(Serial.read());
+  }
+
   while (STM32Serial.available()) {
     Serial.write(STM32Serial.read());
   }
-  delay(1000);
 }
