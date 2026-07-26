@@ -3,6 +3,7 @@
 "ssd1315\main.o"
 "ssd1315\gpio.o"
 "ssd1315\i2c.o"
+"ssd1315\tim.o"
 "ssd1315\stm32f1xx_it.o"
 "ssd1315\stm32f1xx_hal_msp.o"
 "ssd1315\stm32f1xx_hal_gpio_ex.o"
@@ -17,7 +18,10 @@
 "ssd1315\stm32f1xx_hal_flash.o"
 "ssd1315\stm32f1xx_hal_flash_ex.o"
 "ssd1315\stm32f1xx_hal_exti.o"
+"ssd1315\stm32f1xx_hal_tim.o"
+"ssd1315\stm32f1xx_hal_tim_ex.o"
 "ssd1315\system_stm32f1xx.o"
+"ssd1315\ssd1315.o"
 --strict --scatter "SSD1315\SSD1315.sct"
 --summary_stderr --info summarysizes --map --load_addr_map_info --xref --callgraph --symbols
 --info sizes --info totals --info unused --info veneers

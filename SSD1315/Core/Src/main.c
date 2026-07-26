@@ -19,8 +19,9 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "i2c.h"
+#include "tim.h"
 #include "gpio.h"
-
+#include "ssd1315.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
@@ -56,6 +57,26 @@ void SystemClock_Config(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+uint8_t oled_buf[1024];
+
+volatile uint8_t flag = 0;
+
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+    if (htim->Instance == TIM2) {
+        flag = 1;
+    }
+}
+
+void Draw1(){
+	char* str = "STM32 programming";
+	uint8_t x = SCREEN_WIDTH/ 2 - (((uint8_t)strlen(str) * FONT_WIDTH) / 2);
+	uint8_t y = 32;
+	DrawRectangle(oled_buf, x - 5, 10, (((uint8_t)strlen(str) * FONT_WIDTH) + 10), 48);
+	DrawString(oled_buf, SCREEN_WIDTH/ 2 - (((uint8_t)strlen(str) * FONT_WIDTH) / 2), 32, str);
+	
+	SSD1315_Update(oled_buf);
+}
 /* USER CODE END 0 */
 
 /**
@@ -88,17 +109,36 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_I2C1_Init();
+  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
+	HAL_TIM_Base_Start_IT(&htim2); 
+	
+	SSD1315_Init();
+  SSD1315_Clear();
 
+  memset(oled_buf, 0x00, sizeof(oled_buf));
+	Draw1();
+	//DrawTriangle(oled_buf, 35, 12, 35, 56, 93, 39);
+	
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+	
+
   while (1)
   {
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+		//ClearRegion(oled_buf, 33, 11, 63, 47);
+				
+		//SSD1315_Update(oled_buf);
+		if (flag)
+		{
+			flag = 0;
+			SSD1315_Update(oled_buf);
+		}
   }
   /* USER CODE END 3 */
 }
