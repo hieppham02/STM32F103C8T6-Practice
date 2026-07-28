@@ -20,11 +20,12 @@
 #include "main.h"
 #include "i2c.h"
 #include "tim.h"
+#include "usart.h"
 #include "gpio.h"
-#include "ssd1315.h"
+
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "ssd1315.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -57,9 +58,17 @@ void SystemClock_Config(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+#define SRF05_TRIG_PORT GPIOA
+#define SRF05_TRIG_PIN  GPIO_PIN_5
+
+#define SRF05_ECHO_PORT GPIOA
+#define SRF05_ECHO_PIN  GPIO_PIN_6
+
 uint8_t oled_buf[1024];
 
 volatile uint8_t flag = 0;
+
+float distance = 0.0f;
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
@@ -68,15 +77,62 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     }
 }
 
-void Draw1(){
-	char* str = "STM32 programming";
-	uint8_t x = SCREEN_WIDTH/ 2 - (((uint8_t)strlen(str) * FONT_WIDTH) / 2);
-	uint8_t y = 32;
-	DrawRectangle(oled_buf, x - 5, 10, (((uint8_t)strlen(str) * FONT_WIDTH) + 10), 48);
-	DrawString(oled_buf, SCREEN_WIDTH/ 2 - (((uint8_t)strlen(str) * FONT_WIDTH) / 2), 32, str);
-	
-	SSD1315_Update(oled_buf);
+void Draw1(char* str){
+    ClearRegion(oled_buf, 0, 10, 128, 48);
+    uint8_t text_width = (uint8_t)strlen(str) * 6;
+    uint8_t x = (128 - text_width) / 2;
+    
+    DrawRectangle(oled_buf, x - 5, 25, text_width + 10, 15);
+    DrawString(oled_buf, x, 30, str);
 }
+
+void Delay_us(uint16_t us) {
+    __HAL_TIM_SET_COUNTER(&htim3, 0);
+    while (__HAL_TIM_GET_COUNTER(&htim3) < us);
+}
+
+void SRF05_Trigger(void)
+{
+    HAL_GPIO_WritePin(SRF05_TRIG_PORT, SRF05_TRIG_PIN, 0);
+    Delay_us(2);
+
+    HAL_GPIO_WritePin(SRF05_TRIG_PORT, SRF05_TRIG_PIN, 1);
+    Delay_us(10);
+
+    HAL_GPIO_WritePin(SRF05_TRIG_PORT, SRF05_TRIG_PIN, 0);
+}
+uint32_t elapsed;
+float GetDistance() {
+    elapsed  = 0;
+    uint32_t timeout = 30000; // 30ms
+
+    SRF05_Trigger();
+
+    // ECHO -> HIGH
+		// wait gpio high -> bat dau do
+    while(HAL_GPIO_ReadPin(SRF05_ECHO_PORT, SRF05_ECHO_PIN) == 0) {
+        if(--timeout == 0) return 0;
+    }
+
+		// reset counter
+    __HAL_TIM_SET_COUNTER(&htim3, 0);
+
+    // 3. ECHO -> LOW
+		// wait gpio low -> ket thuc do
+    while (HAL_GPIO_ReadPin(SRF05_ECHO_PORT, SRF05_ECHO_PIN) == 1) {
+        if (__HAL_TIM_GET_COUNTER(&htim3) > 30000) return 0; // Qu� xa (> 5 m�t)
+    }
+
+    // ECHO LOW => lay thoi gian tu counter
+     elapsed  = __HAL_TIM_GET_COUNTER(&htim3);
+
+		// V = 34.3 m/s = 34300 cm/s 
+		// 1s = 1,000,000 microsecond
+		// => V = 0.034 cm/microsecond
+		// chia 2 vi tinh 2 quang duong di + ve
+    return (float)elapsed  * (34300.0f / 1000000.0f) / 2 ;
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -110,14 +166,16 @@ int main(void)
   MX_GPIO_Init();
   MX_I2C1_Init();
   MX_TIM2_Init();
+  MX_TIM3_Init();
+  MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
 	HAL_TIM_Base_Start_IT(&htim2); 
+	HAL_TIM_Base_Start(&htim3);
 	
 	SSD1315_Init();
   SSD1315_Clear();
 
   memset(oled_buf, 0x00, sizeof(oled_buf));
-	Draw1();
 	//DrawTriangle(oled_buf, 35, 12, 35, 56, 93, 39);
 	
   /* USER CODE END 2 */
@@ -131,14 +189,22 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-		//ClearRegion(oled_buf, 33, 11, 63, 47);
-				
-		//SSD1315_Update(oled_buf);
-		if (flag)
-		{
-			flag = 0;
-			SSD1315_Update(oled_buf);
+		distance = GetDistance();
+    if(distance <= 5.0f){
+			HAL_GPIO_WritePin(GPIOA, GPIO_PIN_7, 1);
+		} else {
+			HAL_GPIO_WritePin(GPIOA, GPIO_PIN_7, 0);
 		}
+    char text[20];
+    sprintf(text, "%.1f cm\n", distance);
+    Draw1(text);
+    if (flag) { 
+      flag = 0;
+      SSD1315_Update(oled_buf); 
+			HAL_UART_Transmit(&huart1, (uint8_t*)text, strlen(text), 100);
+    }
+    
+    HAL_Delay(60);
   }
   /* USER CODE END 3 */
 }
