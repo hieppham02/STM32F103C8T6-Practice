@@ -209,7 +209,7 @@ int main(void)
 		uint16_t x = adc_val[0];
 		uint16_t y = adc_val[1];
 		Motor_Update(x, y);
-		HAL_Delay(50);
+		HAL_Delay(50);	
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
