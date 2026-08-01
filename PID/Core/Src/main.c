@@ -18,12 +18,13 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "i2c.h"
 #include "tim.h"
 #include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "math.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -75,6 +76,97 @@ void RunTimer(){
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 	RunTimer();
 }
+
+#define 	MPU6050_ADDR		(0x68 << 1)
+#define 	RAD_TO_DEG 			57.295779513082320876798154814105f
+#define 	ALPHA 					0.96f
+
+float SensitivityA 	= 16384.0f;
+float SensitivityG	= 131.0f;
+
+float gx, gy, gz;
+float ax, ay, az;
+
+float pitch = 0.0f;
+float roll = 0.0f;
+float yaw = 0.0f;
+
+uint32_t prev_time = 0;
+
+void MPU6050_Init();
+void MPU6050_ReadAccel();
+void MPU6050_ReadGyro();
+void MPU6050_ReadAngle();
+void MPU6050_CalculateAngle(float ax, float ay, float az, float gx, float gy, float gz);
+
+void MPU6050_Init(){
+	uint8_t check, data;
+	
+	HAL_I2C_Mem_Read(&hi2c1, MPU6050_ADDR, 0x75, 1, &check, 1, 1000);
+	
+	if(check == 0x68){
+		data = 0x00;
+		HAL_I2C_Mem_Write(&hi2c1, MPU6050_ADDR, 0x6B, 1, &data, 1, 1000);
+		data = 0x07;
+		HAL_I2C_Mem_Write(&hi2c1, MPU6050_ADDR, 0x19, 1, &data, 1, 1000);
+		data = 0x00;
+		HAL_I2C_Mem_Write(&hi2c1, MPU6050_ADDR, 0x1B, 1, &data, 1, 1000);
+		data = 0x00;
+		HAL_I2C_Mem_Write(&hi2c1, MPU6050_ADDR, 0x1C, 1, &data, 1, 1000);
+		data = 0x03;
+		HAL_I2C_Mem_Write(&hi2c1, MPU6050_ADDR, 0x1A, 1, &data, 1, 1000);
+	}
+	
+}
+
+void MPU6050_ReadAccel(){
+	uint8_t data[6];	
+	HAL_I2C_Mem_Read(&hi2c1, MPU6050_ADDR, 0x3B, 1, data, 6, 1000);
+	
+	int16_t raw_ax = (int16_t)(data[0] << 8 | data[1]);
+  int16_t raw_ay = (int16_t)(data[2] << 8 | data[3]);
+  int16_t raw_az = (int16_t)(data[4] << 8 | data[5]);
+
+  ax = (float)raw_ax / SensitivityA;
+  ay = (float)raw_ay / SensitivityA;
+  az = (float)raw_az / SensitivityA;
+}
+
+void MPU6050_ReadGyro(){
+	uint8_t data[6];	
+	HAL_I2C_Mem_Read(&hi2c1, MPU6050_ADDR, 0x43, 1, data, 6, 1000);
+	
+	int16_t raw_gx = (int16_t)(data[0] << 8 | data[1]);
+  int16_t raw_gy = (int16_t)(data[2] << 8 | data[3]);
+  int16_t raw_gz = (int16_t)(data[4] << 8 | data[5]);
+
+  gx = (float)raw_gx / SensitivityG;
+  gy = (float)raw_gy / SensitivityG;
+  gz = (float)raw_gz / SensitivityG;
+}
+
+void MPU6050_CalculateAngle(float ax, float ay, float az, float gx, float gy, float gz)
+{
+	uint32_t current_time = HAL_GetTick();
+	
+	if (prev_time == 0) {
+		prev_time = current_time;
+		return;
+	}
+
+	float dt = (float)(current_time - prev_time) / 1000.0f;
+	prev_time = current_time;
+
+	if (dt <= 0.0f) return;
+
+	float roll_accel  = atan2f(ay, az) * RAD_TO_DEG;
+	float pitch_accel = atan2f(-ax, sqrtf(ay * ay + az * az)) * RAD_TO_DEG;
+
+	roll  = ALPHA * (roll  + gx * dt) + (1.0f - ALPHA) * roll_accel;
+	pitch = ALPHA * (pitch + gy * dt) + (1.0f - ALPHA) * pitch_accel;
+
+	yaw += gz * dt;
+}
 /* USER CODE END 0 */
 
 /**
@@ -107,24 +199,34 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_TIM2_Init();
+  MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
 	HAL_TIM_Base_Start_IT(&htim2);
+	
+	MPU6050_Init();
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, 0);
-	uint8_t duration = 2;
-	SetTimer(duration);
+	//HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, 0);
+	//uint8_t duration = 2;
+	//SetTimer(duration);
   while (1)
   {
+		/*
 		if(timer1_flag == 1){		
 			SetTimer(duration);
 			HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
 		}
+		*/
+		
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+		MPU6050_ReadAccel();
+		MPU6050_ReadGyro();
+		MPU6050_CalculateAngle(ax, ay, az, gx, gy, gz);
+		HAL_Delay(100);
   }
   /* USER CODE END 3 */
 }
@@ -147,7 +249,7 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
-  RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL9;
+  RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL2;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
     Error_Handler();
@@ -158,11 +260,11 @@ void SystemClock_Config(void)
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
                               |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
-  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV2;
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_0) != HAL_OK)
   {
     Error_Handler();
   }
