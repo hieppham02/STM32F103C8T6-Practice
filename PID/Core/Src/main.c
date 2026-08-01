@@ -55,15 +55,25 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-uint8_t counter = 100;
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
-	if(counter > 0 ){
-		counter --;
-		if(counter <= 0){
-			counter = 100;
-			HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
+volatile  uint16_t timer1_flag = 0;
+volatile  uint16_t timer1_counter = 0;
+
+void SetTimer(uint16_t duration){
+	timer1_flag = 0;
+	timer1_counter = duration;
+}
+
+void RunTimer(){
+	if(timer1_counter > 0){
+		timer1_counter --;
+		if (timer1_counter == 0){
+			timer1_flag = 1;
 		}
 	}
+}
+
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
+	RunTimer();
 }
 /* USER CODE END 0 */
 
@@ -103,8 +113,15 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, 0);
+	uint8_t duration = 2;
+	SetTimer(duration);
   while (1)
   {
+		if(timer1_flag == 1){		
+			SetTimer(duration);
+			HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
+		}
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
