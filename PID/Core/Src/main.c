@@ -73,8 +73,27 @@ void RunTimer(){
 	}
 }
 
+volatile uint8_t mpu_update_flag = 0;
+
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 	RunTimer();
+	if (htim->Instance == TIM2)
+	{
+			mpu_update_flag = 1;
+	}
+}
+
+void Servo_Init()
+{
+	HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
+}
+
+void Servo_Write(uint8_t angle)
+{
+	// ccr = (max-min) * angle / 180 + min
+	// servo sg90: min 0.5micros, max 2500micros
+	uint16_t pulse = (((2500 - 500) * angle) / 180) + 500;
+	__HAL_TIM_SetCompare(&htim3, TIM_CHANNEL_1, pulse);
 }
 
 #define 	MPU6050_ADDR		(0x68 << 1)
@@ -92,6 +111,8 @@ float roll = 0.0f;
 float yaw = 0.0f;
 
 uint32_t prev_time = 0;
+
+float servo_pitch_angle = 0.0f;
 
 void MPU6050_Init();
 void MPU6050_ReadAccel();
@@ -166,7 +187,9 @@ void MPU6050_CalculateAngle(float ax, float ay, float az, float gx, float gy, fl
 	pitch = ALPHA * (pitch + gy * dt) + (1.0f - ALPHA) * pitch_accel;
 
 	yaw += gz * dt;
+	
 }
+	
 /* USER CODE END 0 */
 
 /**
@@ -200,10 +223,11 @@ int main(void)
   MX_GPIO_Init();
   MX_TIM2_Init();
   MX_I2C1_Init();
+  MX_TIM3_Init();
   /* USER CODE BEGIN 2 */
 	HAL_TIM_Base_Start_IT(&htim2);
-	
 	MPU6050_Init();
+	Servo_Init();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -223,10 +247,23 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+		
 		MPU6050_ReadAccel();
 		MPU6050_ReadGyro();
 		MPU6050_CalculateAngle(ax, ay, az, gx, gy, gz);
 		HAL_Delay(100);
+		if (mpu_update_flag)
+    {
+			mpu_update_flag = 0;
+
+			
+			servo_pitch_angle = 90.0f - pitch;
+
+			if (servo_pitch_angle > 180.0f) servo_pitch_angle = 180.0f;
+			if (servo_pitch_angle < 0.0f) servo_pitch_angle = 0.0f;
+
+			Servo_Write((uint8_t)servo_pitch_angle);
+    }
   }
   /* USER CODE END 3 */
 }
