@@ -25,6 +25,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "math.h"
+#include "pid.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -76,7 +77,7 @@ void RunTimer(){
 volatile uint8_t mpu_update_flag = 0;
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
-	RunTimer();
+	//RunTimer();
 	if (htim->Instance == TIM2)
 	{
 			mpu_update_flag = 1;
@@ -111,8 +112,6 @@ float roll = 0.0f;
 float yaw = 0.0f;
 
 uint32_t prev_time = 0;
-
-float servo_pitch_angle = 0.0f;
 
 void MPU6050_Init();
 void MPU6050_ReadAccel();
@@ -180,16 +179,19 @@ void MPU6050_CalculateAngle(float ax, float ay, float az, float gx, float gy, fl
 
 	if (dt <= 0.0f) return;
 
-	float roll_accel  = atan2f(ay, az) * RAD_TO_DEG;
-	float pitch_accel = atan2f(-ax, sqrtf(ay * ay + az * az)) * RAD_TO_DEG;
+	float roll_accel  = atan2f(ay, sqrtf(ax * ax + az * az)) * RAD_TO_DEG;
+	float pitch_accel = atan2f(ax, sqrtf(ay * ay + az * az)) * RAD_TO_DEG;
 
 	roll  = ALPHA * (roll  + gx * dt) + (1.0f - ALPHA) * roll_accel;
 	pitch = ALPHA * (pitch + gy * dt) + (1.0f - ALPHA) * pitch_accel;
 
 	yaw += gz * dt;
-	
 }
-	
+
+
+PID_HandleTypeDef anglePid;
+
+
 /* USER CODE END 0 */
 
 /**
@@ -225,9 +227,23 @@ int main(void)
   MX_I2C1_Init();
   MX_TIM3_Init();
   /* USER CODE BEGIN 2 */
-	HAL_TIM_Base_Start_IT(&htim2);
-	MPU6050_Init();
+	// LUU Y: pid_output la DO LECH (us) quanh tam servo (1500us = 90 do co khi),
+	// khong phai gia tri goc servo can toi. Vi vay setpoint phai la gia tri "pitch"
+	// khi tay/be mat cam bien o vi tri can giu (thuong ~0 do neu de PHANG), chu KHONG
+	// phai 90.0f. Hay nap thu, in gia tri "pitch" qua UART/breakpoint luc de phang de
+	// xac nhan, roi chinh lai so nay cho dung setup cua ban.
+	PID_Init(&anglePid,
+					 2.1f, 0.4f, 0.2f,   // Kp, Ki, Kd — chỉnh lại theo thực tế
+					 0.0f,               // setpoint: gia tri pitch mong muon giu (XEM LUU Y TREN)
+					 -400.0f, 400.0f,    // gioi han output (us lech quanh tam)
+					 0.01f);             // Ts = 10ms, khop chu ky ngat TIM2
+
 	Servo_Init();
+	__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 1500); // dat servo ve giua (90 do) truoc
+	HAL_TIM_Base_Start_IT(&htim2); // bat dau ngat 100Hz
+	MPU6050_Init();
+	
+	/* ======================================================= */
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -248,23 +264,30 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 		
-		MPU6050_ReadAccel();
-		MPU6050_ReadGyro();
-		MPU6050_CalculateAngle(ax, ay, az, gx, gy, gz);
-		HAL_Delay(100);
 		if (mpu_update_flag)
     {
-			mpu_update_flag = 0;
+        mpu_update_flag = 0;
+				int32_t pulse;
+        float current_angle, pid_output;
 
+        MPU6050_ReadAccel();
+				MPU6050_ReadGyro();
+				MPU6050_CalculateAngle(ax, ay, az, gx, gy, gz);
 			
-			servo_pitch_angle = 90.0f - pitch;
+        current_angle = pitch;     // <-- chon truc phan hoi phu hop (Pitch/Roll/Yaw)
 
-			if (servo_pitch_angle > 180.0f) servo_pitch_angle = 180.0f;
-			if (servo_pitch_angle < 0.0f) servo_pitch_angle = 0.0f;
+        pid_output = PID_Compute(&anglePid, current_angle);
 
-			Servo_Write((uint8_t)servo_pitch_angle);
-    }
-  }
+				// pid_output la do lech (us) quanh tam servo, KHONG phai goc 0-180
+				// nen khong dung Servo_Write() (ham do nhan goc do) ma set CCR truc tiep
+				pulse = 1500 + (int32_t)pid_output;
+
+				if (pulse > 2500) pulse = 2500;   // gioi han an toan SG90
+				if (pulse < 500)  pulse = 500;
+
+				__HAL_TIM_SetCompare(&htim3, TIM_CHANNEL_1, (uint16_t)pulse);
+		}
+}
   /* USER CODE END 3 */
 }
 
