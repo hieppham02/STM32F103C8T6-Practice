@@ -16,6 +16,7 @@
 "spi\stm32f1xx_hal_flash_ex.o"
 "spi\stm32f1xx_hal_exti.o"
 "spi\system_stm32f1xx.o"
+"spi\st7735.o"
 --strict --scatter "SPI\SPI.sct"
 --summary_stderr --info summarysizes --map --load_addr_map_info --xref --callgraph --symbols
 --info sizes --info totals --info unused --info veneers
